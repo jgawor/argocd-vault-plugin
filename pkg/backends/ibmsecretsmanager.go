@@ -12,6 +12,7 @@ import (
 )
 
 var IBMPath, _ = regexp.Compile(`ibmcloud/(?P<type>.+)/secrets/groups/(?P<groupId>[^/\n]+)(/(?P<secretName>.+))?`)
+var GroupId, _ = regexp.Compile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 // IBMSecretMetadata wraps the SecretMetadataIntf provided by the SDK
 // It provides a generic method for accessing the metadata regardless of secret type
@@ -282,6 +283,7 @@ type IBMSecretsManagerClient interface {
 	ListSecrets(listAllSecretsOptions *ibmsm.ListSecretsOptions) (result *ibmsm.SecretMetadataPaginatedCollection, response *core.DetailedResponse, err error)
 	GetSecret(getSecretOptions *ibmsm.GetSecretOptions) (result ibmsm.SecretIntf, response *core.DetailedResponse, err error)
 	GetSecretVersion(getSecretOptions *ibmsm.GetSecretVersionOptions) (result ibmsm.SecretVersionIntf, response *core.DetailedResponse, err error)
+	ListSecretGroups(listSecretGroupsOptions *ibmsm.ListSecretGroupsOptions) (result *ibmsm.SecretGroupCollection, response *core.DetailedResponse, err error)
 }
 
 // Used as the key into the several caches for IBM SM API calls
@@ -314,6 +316,8 @@ type IBMSecretsManager struct {
 	// Keeps track of whether GetSecrets has been called for a given group and secret type
 	// Only read/written to by the main goroutine, no synchronized access needed
 	retrievedAllSecrets map[cacheKey]bool
+
+	secretGroups map[string]string
 }
 
 // NewIBMSecretsManagerBackend initializes a new IBM Secret Manager backend
@@ -323,6 +327,7 @@ func NewIBMSecretsManagerBackend(client IBMSecretsManagerClient) *IBMSecretsMana
 		listAllSecretsCache: make(map[cacheKey]map[string]*IBMSecretMetadata),
 		getSecretsCache:     make(map[cacheKey]map[string]interface{}),
 		retrievedAllSecrets: make(map[cacheKey]bool),
+		secretGroups:        make(map[string]string),
 	}
 	return ibmSecretsManager
 }
@@ -536,13 +541,45 @@ func storeSecret(secrets *map[string]interface{}, result map[string]interface{})
 	return nil
 }
 
+func (i *IBMSecretsManager) ResolveGroup(group string) (string, error) {
+	// no need to resolve default or groupIds
+	if group == "default" || GroupId.MatchString(group) {
+		return group, nil
+	}
+
+	// list groups
+	if len(i.secretGroups) == 0 {
+		opts := &ibmsm.ListSecretGroupsOptions{}
+		secretGroupCollection, _, err := i.Client.ListSecretGroups(opts)
+		if err != nil {
+			return "", fmt.Errorf("Could not list security groups: %s", err)
+		}
+		for _, group := range secretGroupCollection.SecretGroups {
+			fmt.Println("", string(*group.ID), string(*group.Name))
+			i.secretGroups[*group.Name] = *group.ID
+		}
+	}
+
+	// look up group id for group name
+	groupId := i.secretGroups[group]
+	if groupId == "" {
+		return "", fmt.Errorf("No such security group %s", group)
+	} else {
+		return groupId, nil
+	}
+}
+
 // GetSecrets returns the data for all secrets of a specific type of a group in IBM Secrets Manager
 func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations map[string]string) (map[string]interface{}, error) {
-	secretType, groupId, secretName, err := parsePath(path)
+	secretType, group, secretName, err := parsePath(path)
 	if err != nil {
-		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP_ID) for IBM Secrets Manager: %s", path)
+		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP) for IBM Secrets Manager: %s", path)
 	}
-	fmt.Println("get secrets:", path, version, secretType, groupId, secretName)
+
+	groupId, err := i.ResolveGroup(group)
+	if err != nil {
+		return nil, err
+	}
 
 	ckey := cacheKey{groupId, secretType}
 
@@ -615,11 +652,16 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 // GetIndividualSecret will get the specific secret (placeholder) from the SM backend
 // This requires listing the secrets of the group to obtain the id, and then using that to grab the one secret's payload
 func (i *IBMSecretsManager) GetIndividualSecret(kvpath, secretRef, version string, annotations map[string]string) (interface{}, error) {
-	secretType, groupId, secretName, err := parsePath(kvpath)
+	secretType, group, secretName, err := parsePath(kvpath)
 	if err != nil {
-		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP_ID) for IBM Secrets Manager: %s", kvpath)
+		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP) for IBM Secrets Manager: %s", kvpath)
 	}
-	fmt.Println("get secret:", secretType, groupId, secretName, secretRef)
+
+	groupId, err := i.ResolveGroup(group)
+	if err != nil {
+		return nil, err
+	}
+
 	var secretKey string
 	if secretName == "" {
 		secretName = secretRef
