@@ -555,7 +555,6 @@ func (i *IBMSecretsManager) ResolveGroup(group string) (string, error) {
 			return "", fmt.Errorf("Could not list security groups: %s", err)
 		}
 		for _, group := range secretGroupCollection.SecretGroups {
-			fmt.Println("", string(*group.ID), string(*group.Name))
 			i.secretGroups[*group.Name] = *group.ID
 		}
 	}
@@ -586,11 +585,16 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 	// Bypass the cache when explicit version is requested
 	// Otherwise, use it if applicable
 	if version == "" && i.retrievedAllSecrets[ckey] {
-		secretData := i.getSecretsCache[ckey]
+		secrets := i.getSecretsCache[ckey]
 		if secretName != "" {
-			return secretData[secretName].(map[string]interface{}), nil
+			secretData, ok := secrets[secretName].(map[string]interface{})
+			if !ok {
+				return nil, nil
+			} else {
+				return secretData, nil
+			}
 		} else {
-			return secretData, nil
+			return secrets, nil
 		}
 	}
 
@@ -643,7 +647,12 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 	i.retrievedAllSecrets[ckey] = true
 
 	if secretName != "" {
-		return secrets[secretName].(map[string]interface{}), nil
+		secretData, ok := secrets[secretName].(map[string]interface{})
+		if !ok {
+			return nil, nil
+		} else {
+			return secretData, nil
+		}
 	} else {
 		return secrets, nil
 	}
@@ -676,7 +685,12 @@ func (i *IBMSecretsManager) GetIndividualSecret(kvpath, secretRef, version strin
 	if version == "" && i.retrievedAllSecrets[ckey] {
 		secretData := i.getSecretsCache[ckey][secretName]
 		if secretKey != "" {
-			return secretData.(map[string]interface{})[secretKey], nil
+			secretValue, ok := secretData.(map[string]interface{})
+			if ok {
+				return secretValue[secretKey], nil
+			} else {
+				return nil, nil
+			}
 		} else {
 			return secretData, nil
 		}
@@ -712,7 +726,12 @@ func (i *IBMSecretsManager) GetIndividualSecret(kvpath, secretRef, version strin
 
 	secretData := secrets[secretName]
 	if secretKey != "" {
-		return secretData.(map[string]interface{})[secretKey], nil
+		secretValue, ok := secretData.(map[string]interface{})
+		if ok {
+			return secretValue[secretKey], nil
+		} else {
+			return nil, nil
+		}
 	} else {
 		return secretData, nil
 	}
