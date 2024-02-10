@@ -574,6 +574,9 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 	if err != nil {
 		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP) for IBM Secrets Manager: %s", path)
 	}
+	if secretType == "arbitrary" && secretName != "" {
+		return nil, fmt.Errorf("The 'ibmcloud/$TYPE/secrets/groups/$GROUP/$SECRET' path format is not supported for arbitrary secrets: %s", path)
+	}
 
 	groupId, err := i.ResolveGroup(group)
 	if err != nil {
@@ -588,10 +591,10 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 		secrets := i.getSecretsCache[ckey]
 		if secretName != "" {
 			secretData, ok := secrets[secretName].(map[string]interface{})
-			if !ok {
-				return nil, nil
-			} else {
+			if ok {
 				return secretData, nil
+			} else {
+				return nil, nil
 			}
 		} else {
 			return secrets, nil
@@ -648,10 +651,10 @@ func (i *IBMSecretsManager) GetSecrets(path string, version string, annotations 
 
 	if secretName != "" {
 		secretData, ok := secrets[secretName].(map[string]interface{})
-		if !ok {
-			return nil, nil
-		} else {
+		if ok {
 			return secretData, nil
+		} else {
+			return nil, nil
 		}
 	} else {
 		return secrets, nil
@@ -664,6 +667,9 @@ func (i *IBMSecretsManager) GetIndividualSecret(kvpath, secretRef, version strin
 	secretType, group, secretName, err := parsePath(kvpath)
 	if err != nil {
 		return nil, fmt.Errorf("Path is not in the correct format (ibmcloud/$TYPE/secrets/groups/$GROUP) for IBM Secrets Manager: %s", kvpath)
+	}
+	if secretType == "arbitrary" && secretName != "" {
+		return nil, fmt.Errorf("The 'ibmcloud/$TYPE/secrets/groups/$GROUP/$SECRET' path format is not supported for arbitrary secrets: %s", kvpath)
 	}
 
 	groupId, err := i.ResolveGroup(group)

@@ -741,24 +741,20 @@ func TestIBMSecretsManagerSecretLookup(t *testing.T) {
 		GetIndividualSecretTest(t, "ibmcloud/iam_credentials/secrets/groups/small-group/my-secret", "doesnotexist", "", nil)
 	})
 
-	/*
-		t.Run("Retrieves individual payload of arbitrary secret", func(t *testing.T) {
-			mock := MockIBMSMClient{}
-			sm := backends.NewIBMSecretsManagerBackend(&mock)
-			res, err := sm.GetSecrets("ibmcloud/arbitrary/secrets/groups/small-group/my-secret", "", nil)
-			if err != nil {
-				t.FailNow()
-			}
+	t.Run("Retrieves payload of arbitrary secret", func(t *testing.T) {
+		mock := MockIBMSMClient{}
+		sm := backends.NewIBMSecretsManagerBackend(&mock)
 
-			// Correct data
-			expected := map[string]interface{}{
-				"my-secret": "password",
-			}
-			if !reflect.DeepEqual(res, expected) {
-				t.Errorf("expected: %s, got: %s.", expected, res)
-			}
-		})
-	*/
+		_, err := sm.GetSecrets("ibmcloud/arbitrary/secrets/groups/small-group/my-secret", "", nil)
+		if err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Errorf("Expected error: %s", err)
+		}
+
+		_, err = sm.GetIndividualSecret("ibmcloud/arbitrary/secrets/groups/small-group/my-secret", "", "", nil)
+		if err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Errorf("Expected error: %s", err)
+		}
+	})
 
 	t.Run("Lookup non-existent secret", func(t *testing.T) {
 		mock := MockIBMSMClient{}
