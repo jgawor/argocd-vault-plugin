@@ -269,7 +269,6 @@ func (d IBMVersionedSecretData) GetSecret() (map[string]interface{}, error) {
 			if *v.PayloadAvailable {
 				result["api_key"] = *v.ApiKey
 			}
-			return nil, fmt.Errorf("Payload unavailable for secret %s", *v.ID)
 		}
 	case *ibmsm.KVSecretVersion:
 		{
@@ -282,9 +281,9 @@ func (d IBMVersionedSecretData) GetSecret() (map[string]interface{}, error) {
 	case *ibmsm.ServiceCredentialsSecretVersion:
 		{
 			if *v.PayloadAvailable {
-				result["credentials"] = *v.Credentials
+				data, _ := json.Marshal(*&v.Credentials)
+				result["credentials"] = string(data)
 			}
-			return nil, fmt.Errorf("Payload unavailable for secret %s", *v.ID)
 		}
 	default:
 		{
